@@ -23,7 +23,9 @@ def get_access_token(client_id, client_secret):
 
 
 def get_spotify_track(track_id, access_token):
-    headers = {'Authorization': f'Bearer {access_token}'}
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
     url = f'https://api.spotify.com/v1/tracks/{track_id}'
 
     response = requests.get(url, headers=headers)
