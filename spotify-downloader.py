@@ -1,6 +1,11 @@
 import yt_dlp
 from requests.auth import HTTPBasicAuth
 import requests
+import re
+import os
+
+def safe_filename(name):
+    return re.sub(r'[\\/*?:"<>|]', '', name)
 
 
 def get_access_token(client_id, client_secret):
@@ -21,11 +26,17 @@ def get_access_token(client_id, client_secret):
     else:
         response.raise_for_status()
 
+def extract_spotify_id(url):
+    return url.split('/')[-1].split('?')[0]
+
 
 def get_spotify_track(track_id, access_token):
     headers = {
         'Authorization': f'Bearer {access_token}'
     }
+
+    track_id = extract_spotify_id(track_id)
+
     url = f'https://api.spotify.com/v1/tracks/{track_id}'
 
     response = requests.get(url, headers=headers)
@@ -40,31 +51,47 @@ def get_spotify_track(track_id, access_token):
         response.raise_for_status()
 
 
-def get_youtube_link(track_name, youtube_api_key):
-    url = 'https://www.googleapis.com/youtube/v3/search'
-    params = {
-        'part': 'snippet',
-        'q': track_name,
-        'type': 'video',
-        'maxResults': 1,
-        'key': youtube_api_key
+def get_spotify_playlist_tracks(playlist_id, access_token):
+    headers = {
+        'Authorization': f'Bearer {access_token}'
     }
 
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    data = response.json()
+    playlist_id = extract_spotify_id(playlist_id)
 
-    if not data['items']:
-        return None
+    url = f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks'
+    params = {
+        'limit': 100,
+        'offset': 0
+    }
 
-    video_id = data['items'][0]['id']['videoId']
-    return f'https://www.youtube.com/watch?v={video_id}'
+    tracks = []
+
+    while True:
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        for item in data['items']:
+            track = item.get('track')
+            if not track:
+                continue
+
+            artist_name = track['artists'][0]['name']
+            song_name = track['name']
+            tracks.append(f'{artist_name} - {song_name}')
+
+        if data['next'] is None:
+            break
+
+        params['offset'] += params['limit']
+
+    return tracks
 
 
-def download_mp3(youtube_url, track_name):
+def download_mp3(track_name):
     ydl_opts = {
         'format': 'bestaudio/best',
-        'outtmpl': f'{track_name}.%(ext)s',
+        'outtmpl': f'{safe_filename(track_name)}.%(ext)s',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -72,37 +99,40 @@ def download_mp3(youtube_url, track_name):
         }],
         'quiet': False,
         'no_warnings': True,
-        'jsruntimes': 'node:/usr/local/bin/node'
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([youtube_url])
-
+        ydl.download([f'ytsearch1:{track_name} official audio'])
 
 
 def main():
-    client_id = 'YOUR_SPOTIFY_CLIENT_ID'
-    client_secret = 'YOUR_SPOTIFY_CLIENT_SECRET'
-    track_id = 'YOUR_SPOTIFY_TRACK_ID'
-    youtube_api_key = 'YOUR_YOUTUBE_API_KEY'
+    client_id = os.environ.get('CLIENT_ID')
+    client_secret = os.environ.get('CLIENT_SECRET')
+    spotify_url = 'https://open.spotify.com/track/4IO2X2YoXoUMv0M2rwomLC'
 
     try:
         access_token = get_access_token(client_id, client_secret)
-        track_name = get_spotify_track(track_id, access_token)
-        print(f'\nTrack found: {track_name}')
 
-        youtube_url = get_youtube_link(track_name, youtube_api_key)
-        if not youtube_url:
-            print('No YouTube video found for this track.')
-            return
-        print(f'YouTube URL: {youtube_url}\n')
+        if 'playlist' in spotify_url:
+            print('Playlist detected\n')
+            tracks = get_spotify_playlist_tracks(spotify_url, access_token)
+        else:
+            print('Single track detected\n')
+            tracks = [get_spotify_track(spotify_url, access_token)]
 
-        print('Downloading MP3...')
-        download_mp3(youtube_url, track_name)
-        print('Download complete!')
+        print(f'Found {len(tracks)} tracks\n')
+
+        for i, track_name in enumerate(tracks, 1):
+            print(f'[{i}/{len(tracks)}] Downloading: {track_name}')
+            download_mp3(track_name)
+            print('Done\n')
 
     except Exception as e:
-        print(f'An error occurred: {e}')
+        print(f'Error: {e}')
+
 
 if __name__ == '__main__':
     main()
+
+
+
