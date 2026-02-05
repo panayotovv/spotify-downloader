@@ -154,7 +154,7 @@ def main():
     load_dotenv()
     client_id = os.environ.get('CLIENT_ID')
     client_secret = os.environ.get('CLIENT_SECRET')
-    spotify_url = 'https://open.spotify.com/track/39SMhVOsxqmhPo7tpZZlLY'
+    spotify_url = ''
 
     try:
         access_token = get_access_token(client_id, client_secret)
